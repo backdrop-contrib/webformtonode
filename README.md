@@ -1,5 +1,5 @@
 # Webform submission to Node
-## This is an early Alpha prototype... Do not use - Do not install - This is for collaboration between developres only.
+## This is an early Alpha prototype... Do not use - Do not install - This is for collaboration between developers only.
 
 A module to copy a Webform submission to a new Node.  You will need to create the Node to mirror the Webform component form_keys.  See help.
 
@@ -27,7 +27,7 @@ Bugs and Feature requests should be reported in the Issue Queue: https://github.
 ## Credits:
 - Backdrop CMS Module created by Stephen Moorhouse.
 
-- Thank you to the following people on Zulip for assitance while creating this module, I couldn't have done it without you.
+- Thank you to the following people on Zulip for assistance while creating this module, I couldn't have done it without you.
 - * argiepiano
 - * indigoxela
 - * klonos
