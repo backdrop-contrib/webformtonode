@@ -1,6 +1,7 @@
 # Webform submission to Node
+## This is an early Alpha prototype... Do not use - Do not install - This is for collaboration between developres only.
 
-A module to copy a Webform submission to a new Node.  You will need to create the Node to mirror the Bebform component form_keys.  See help.
+A module to copy a Webform submission to a new Node.  You will need to create the Node to mirror the Webform component form_keys.  See help.
 
 ### [todo] create Views module intergration so ChartsCSS can be used with dynamic data.
 
