@@ -3,8 +3,6 @@
 
 A module to copy a Webform submission to a new Node.  You will need to create the Node to mirror the Webform component form_keys.  See help.
 
-### [todo] create Views module intergration so ChartsCSS can be used with dynamic data.
-
 ### See the menu ***/admin/config/webformtonode/help*** for Help.
 
 
