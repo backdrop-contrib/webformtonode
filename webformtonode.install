@@ -1,0 +1,93 @@
+<?php
+
+/**
+ * @file
+ * webformtonode.install
+ */
+
+/**
+ * Implements hook_install().
+ */
+function webformtonode_install() {
+  // get module settings 
+  $config = config('webformtonode.settings');
+  
+  $config->set('addtowebform', t('Add to WebForm'));
+  $config->set('contentyptes', t('Content Types'));
+     
+  // Save
+  $config->save();
+  
+  cache_clear_all();
+}
+
+/**
+ * Implementation of hook_schema().
+ *
+ *
+ */
+function xx_webformtonode_schema() {
+  $schema['webform2node'] = array(
+  'description' => 'List of teams and their scores that are playing',
+  'fields' => array(
+    'w2n_id' => array(
+      'description' => 'Unique ID for this entry',
+      'type' => 'serial',
+      'unsigned' => TRUE,
+      'size' => 'big',
+      'not null' => TRUE,
+    ),
+    'w2n_team1id' => array(
+      'description' => 'ID no. for home team',
+      'type' => 'int',
+      'not null' => TRUE,
+    ),
+    'w2n_team1names' => array(
+      'description' => 'Name of the home team',
+      'type' => 'varchar',
+      'length' => '30',
+      'not null' => TRUE,
+    ),
+    'w2n_team1score' => array(
+      'description' => 'Home teams score',
+      'type' => 'int',
+      'not null' => TRUE,
+    ),
+    'w2n_team2id' => array(
+      'description' => 'ID no. for visiting team',
+      'type' => 'int',
+      'not null' => TRUE,
+    ),
+    'w2n_team2names' => array(
+      'description' => 'Name of the visiting team',
+      'type' => 'varchar',
+      'length' => '30',
+      'not null' => TRUE,
+    ),
+    'w2n_team2score' => array(
+      'description' => 'Visiting teams score',
+      'type' => 'int',
+      'not null' => TRUE,
+    ),
+    'w2n_include' => array(
+      'description' => 'Include in the fixture list',
+      'type' => 'int',
+      'size' => 'tiny',
+      'not null' => TRUE,
+    ),
+    'w2n_updated' => array(
+      'description' => 'Unix timestamp when the field was last updated',
+      'type' => 'int',
+      'not null' => TRUE,
+    ),
+  ),
+  'primary key' => array('w2n_id'),
+  'unique keys' => array(
+    'w2n_id' => array('w2n_id')
+  ),
+  'indexes' => array(
+    'team1name' => array('w2n_team1names'),
+  ),
+);
+  return $schema;
+}

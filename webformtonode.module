@@ -1,0 +1,228 @@
+<?php
+
+/**
+ * Implements hook_config_info().
+ */
+function webformtonode_config_info() {
+  $prefixes['webformtonode.settings'] = array(
+    'label' => t('Webform to node settings'),
+    'group' => t('Configuration'),
+  );
+  return $prefixes;
+}
+
+
+
+/**
+ * Implementation of hook_menu().
+ */
+function webformtonode_menu() {
+  $items = array();
+  $items['admin/config/'] = array(
+    'title' => 'Webform to node',
+    'description' => 'Webform to node options.',
+    'position' => 'right',
+    'weight' => -6,
+    'page callback' => 'system_admin_menu_block_page',
+    'access arguments' => array('administer site configuration'),
+    'file' => 'system.admin.inc',
+    'file path' => backdrop_get_path('module', 'system'),
+  );
+  $items['admin/config/webformtonode/settings'] = array(
+    'title' => 'Webform to node',
+    'description' => 'Webform to node options.',
+    'position' => 'right',
+    'weight' => -5,
+    'page callback' => 'system_admin_menu_block_page',
+    'access arguments' => array('administer site configuration'),
+    'file' => 'system.admin.inc',
+    'file path' => backdrop_get_path('module', 'system'),
+  );
+  $items['admin/config/webformtonode/settings/select_webforms'] = array(
+    'title' => '1. Select Webforms',
+    'description' => 'Select Webforms to have this functionality',
+    'weight' => -4,
+    'page callback' => 'backdrop_get_form',
+    'page arguments' => array('webformtonode_admin_select_form'),
+    'access arguments' => array('administer site configuration'),
+    'type' => MENU_NORMAL_ITEM,
+    'file' => 'webformtonode.admin.inc',
+  );
+  $items['admin/config/webformtonode/settings/manage_webforms'] = array(
+    'title' => '2. Manage Selected Webforms',
+    'description' => 'Manage the selected Webform fields and settings.',
+    'page callback' => 'backdrop_get_form',
+    'page arguments' => array('webformtonode_admin_manage_form'),
+    'access arguments' => array('administer site configuration'),
+    'type' => MENU_NORMAL_ITEM,
+    'file' => 'webformtonode.admin.inc',
+  );
+
+  // Menu Callback for saving the Webform Submission to a new node.
+  $items['node/%webform_menu/submission/%webform_menu_submission/saveasnode'] = array(
+    'title' => 'Copy this webform submission to a new node.',
+    'load arguments' => array(1),
+    'page callback' => 'backdrop_get_form',
+    'page arguments' => array('webformtonode_confirm', 1, 3),
+    'access callback' => 'webform_results_access',
+    'access arguments' => array(1),
+    'type' => MENU_CALLBACK,
+    );
+
+
+// Menu Callback for rendering field editing page.
+  $items['admin/config/webformtonode/settings/manage_webforms/fields'] = array(
+    'title' => 'Manage fields',
+    'description' => 'Manage fields for this Webform.',
+    'page callback' => 'webformtonode_admin_fields',
+    'access arguments' => array('administer site configuration'),
+    'type' => MENU_NORMAL_ITEM,
+    'file' => 'webformtonode.admin.inc',
+  );
+
+  // Menu Callback for rendering field editing page.
+  $items['admin/config/webformtonode/settings/manage_webforms/fields/%'] = array(
+      'title' => 'Webforms to node fields',
+      'load arguments' => array(1),
+      'page callback' => 'backdrop_get_form',
+      'page arguments' => array('webformtonode_admin_fields_list_form', 6),
+      'access arguments' => array('administer site configuration'),
+      'type' => MENU_DEFAULT_LOCAL_TASK,
+      'file' => 'webformtonode.admin.inc',
+    );
+
+  // Menu Callback for linking content type to webform.
+  $items['admin/config/webformtonode/settings/manage_webforms/fields/%/contenttype'] = array(
+   'title' => 'Fields list',
+   'load arguments' => array(1),
+   'page callback' => 'backdrop_get_form',
+   'page arguments' => array('webformtonode_admin_select_contenttype', 6),
+   'access arguments' => array('administer site configuration'),
+   'type' => MENU_LOCAL_TASK,
+   'file' => 'webformtonode.admin.inc',
+   'weight' => -10,
+  );
+
+    // Menu Callback for linking content type to webform.
+    $items['admin/config/webformtonode/settings/manage_webforms/fields/%/listfields'] = array(
+      'title' => 'Modify fields',
+      'load arguments' => array(1),
+      'page callback' => 'backdrop_get_form',
+      'page arguments' => array('webformtonode_admin_select_listfields', 6),
+      'access arguments' => array('administer site configuration'),
+      'type' => MENU_LOCAL_TASK,
+      'file' => 'webformtonode.admin.inc',
+      'weight' => 1,
+     );
+   
+
+  return $items;
+
+}
+
+/**
+ * Implementation of hook_preprocess().
+ * 
+ * This will add the css file to every page
+ */
+function webformtonode_preprocess(&$vars, $hook) {
+  if($hook == 'page')
+   backdrop_add_css(backdrop_get_path('module', 'webformtonode') .'/css/webformtonode.css');
+}
+
+
+/**
+ * Implementation of hook_preprocess_html().
+ * 
+ * This will add the css file to every page
+ */
+//function webformtonode_preprocess_html(&$variables) {
+//  backdrop_add_css(backdrop_get_path('module', 'webformtonode') .'/css/webformtonode.css');
+//}
+
+
+
+/**
+ * Provide a list of actions that can be executed on a submission.
+ *
+ * Some actions are displayed in the list of submissions such as edit, view, and
+ * delete. All other actions are displayed only when viewing the submission.
+ * These additional actions may be specified in this hook. Examples included
+ * directly in the Webform module include PDF, print, and resend e-mails. Other
+ * modules may extend this list by using this hook.
+ *
+ * @param $node
+ *   The Webform node on which this submission was made.
+ * @param $submission
+ *   The Webform submission on which the actions may be performed.
+ *
+ * @return array
+ *   List of action.
+ */
+function webformtonode_webform_submission_actions($node, $submission) {
+  
+  //Get list of webforms the 'Webform To Node' option should be added to.
+  $webformstonode = config_get('webformtonode.settings', 'webforms');
+  
+  $actions = array();
+
+  if (webform_results_access($node)) {
+    //if this submission nid is in the list of webforms then add button option
+    if (in_array($node->nid, $webformstonode, true)) {
+       $actions['saveasnode'] = array(
+        'title' => t('Save submission as node'),
+        'href' => 'node/' . $node->nid . '/submission/' . $submission->sid . '/saveasnode',
+       'query' => backdrop_get_destination(),
+     );
+    }
+  }
+
+  //backdrop_set_message('<pre>$actions - $actions<br>'. print_r($actions, TRUE) .'</pre>');
+
+  return $actions;
+}
+
+
+/**
+* Form confirming to create a new node from form submissoin
+*/
+function webformtonode_confirm($form, $form_state, $node, $submission) {
+
+  backdrop_set_message('<pre>$submission - $submission<br>'. print_r($submission, TRUE) .'</pre>');
+
+  // Get name of submitter.
+  $speaker_name = $submission->data[1][0];
+
+  backdrop_set_message('<pre>$speaker_name - $speaker_name<br>'. print_r($speaker_name, TRUE) .'</pre>');
+
+  $form['#tree'] = TRUE;
+
+  $form['#node'] = $node;
+  $form['#submission'] = $submission;
+  $form['actions'] = array('#type' => 'actions');
+  $form['actions']['text'] = array('#markup' => '<p>' . t('Are you sure you want to create a new node from <strong><em>' . $speaker_name . '</em></strong> submission?') . '</p>');
+  $form['actions']['save'] = array(
+    '#type' => 'submit',
+    '#value' => t('Create node from submission'),
+  );
+  $form['actions']['cancel'] = array(
+    '#type' => 'markup',
+    '#markup' => l(t('Cancel'), isset($_GET['destination']) ? $_GET['destination'] : 'node/' . $node->nid . '/saveasnode/' . $submission->sid),
+  );
+return $form;
+}
+
+/**
+* Submit function for creating a node from a webform submission
+*/
+function webformtonode_confirm_submit($form, &$form_state) {
+  // Retrieve node and submission.
+  $node = $form_state['build_info']['args'][0];
+  $submission = $form_state['build_info']['args'][1];
+  backdrop_set_message('<pre>webformtonode_confirm_submit - $node<br>'. print_r($node, TRUE) .'</pre>');
+  backdrop_set_message('<pre>webformtonode_confirm_submit - $submission<br>'. print_r($submission, TRUE) .'</pre>');
+
+
+  backdrop_set_message('Submission saved');
+
+}
