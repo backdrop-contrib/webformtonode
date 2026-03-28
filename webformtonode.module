@@ -1,6 +1,11 @@
 <?php
 
 /**
+ * @file
+ * Core hooks and "Warp Engine" for Webform to Node.
+ */
+
+/**
  * Implements hook_config_info().
  */
 function webformtonode_config_info() {
@@ -11,36 +16,31 @@ function webformtonode_config_info() {
   return $prefixes;
 }
 
-
-
 /**
- * Implementation of hook_menu().
+ * Implements hook_menu().
  */
 function webformtonode_menu() {
   $items = array();
-$items['admin/config/webformtonode/settings'] = array(
+
+  $items['admin/config/webformtonode/settings'] = array(
     'title' => 'Webform to node',
     'description' => 'Configure how webforms translate to structured content.',
-    // We change the callback to our own wrapper.
     'page callback' => 'webformtonode_admin_settings_landing',
     'access arguments' => array('administer site configuration'),
-    'weight' => -5,
     'file' => 'webformtonode.admin.inc',
   );
+
   $items['admin/config/webformtonode/settings/select_webforms'] = array(
     'title' => '1. Select Webforms',
-    'description' => 'Select Webforms to have this functionality',
-    'weight' => 1,
     'page callback' => 'backdrop_get_form',
     'page arguments' => array('webformtonode_admin_select_form'),
     'access arguments' => array('administer site configuration'),
     'type' => MENU_NORMAL_ITEM,
     'file' => 'webformtonode.admin.inc',
   );
+
   $items['admin/config/webformtonode/settings/manage_webforms'] = array(
     'title' => '2. Manage Webforms',
-    'description' => 'Manage the selected Webform fields and settings.',
-    'weight' => 2,
     'page callback' => 'backdrop_get_form',
     'page arguments' => array('webformtonode_admin_manage_form'),
     'access arguments' => array('administer site configuration'),
@@ -48,289 +48,241 @@ $items['admin/config/webformtonode/settings'] = array(
     'file' => 'webformtonode.admin.inc',
   );
 
-  // Menu Callback for saving the Webform Submission to a new node.
+  // The "Transporter" Callback: Promotes a submission to a Node.
   $items['node/%webform_menu/submission/%webform_menu_submission/saveasnode'] = array(
-    'title' => 'Copy this webform submission to a new node.',
+    'title' => 'Save as Node',
     'load arguments' => array(1),
-    'page callback' => 'backdrop_get_form',
-    'page arguments' => array('webformtonode_confirm', 1, 3),
+    'page callback' => 'webformtonode_confirm_callback',
+    'page arguments' => array(1, 3),
     'access callback' => 'webform_results_access',
     'access arguments' => array(1),
     'type' => MENU_CALLBACK,
-    );
+  );
 
-
-// Menu Callback for rendering field editing page.
-  $items['admin/config/webformtonode/settings/manage_webforms/fields'] = array(
-    'title' => 'Manage fields',
-    'description' => 'Manage fields for this Webform.',
-    'page callback' => 'webformtonode_admin_fields',
+  $items['admin/config/webformtonode/settings/manage_webforms/fields/%'] = array(
+    'title' => 'Map Webform to Node Fields',
+    'page callback' => 'backdrop_get_form',
+    'page arguments' => array('webformtonode_admin_fields_list_form', 6),
     'access arguments' => array('administer site configuration'),
     'type' => MENU_CALLBACK,
     'file' => 'webformtonode.admin.inc',
   );
 
-  // Menu Callback for rendering field editing page.
-  $items['admin/config/webformtonode/settings/manage_webforms/fields/%'] = array(
-      'title' => 'Webforms to node fields',
-      'load arguments' => array(1),
-      'page callback' => 'backdrop_get_form',
-      'page arguments' => array('webformtonode_admin_fields_list_form', 6),
-      'access arguments' => array('administer site configuration'),
-      'type' => MENU_CALLBACK,
-      'file' => 'webformtonode.admin.inc',
-    );
-
-  // Menu Callback for linking content type to webform.
-  $items['admin/config/webformtonode/settings/manage_webforms/fields/%/contenttype'] = array(
-   'title' => 'Fields list',
-   'load arguments' => array(1),
-   'page callback' => 'backdrop_get_form',
-   'page arguments' => array('webformtonode_admin_select_contenttype', 6),
-   'access arguments' => array('administer site configuration'),
-   'type' => MENU_CALLBACK,
-   'file' => 'webformtonode.admin.inc',
-   'weight' => -10,
-  );
-
-    // Menu Callback for linking content type to webform.
-    $items['admin/config/webformtonode/settings/manage_webforms/fields/%/listfields'] = array(
-      'title' => 'Modify fields',
-      'load arguments' => array(1),
-      'page callback' => 'backdrop_get_form',
-      'page arguments' => array('webformtonode_admin_select_listfields', 6),
-      'access arguments' => array('administer site configuration'),
-      'type' => MENU_LOCAL_TASK,
-      'file' => 'webformtonode.admin.inc',
-      'weight' => 1,
-     );
-
-
   return $items;
-
 }
 
 /**
- * Implementation of hook_preprocess().
- *
- * This will add the css file to every page
+ * Wrapper callback to handle AJAX/Modal or standard page requests.
  */
-function webformtonode_preprocess(&$vars, $hook) {
-  if($hook == 'page')
-   backdrop_add_css(backdrop_get_path('module', 'webformtonode') .'/css/webformtonode.css');
-}
+function webformtonode_confirm_callback($node, $submission) {
+  // If this is an AJAX request, we prepare for a Modal.
+  if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
+    backdrop_add_library('system', 'backdrop.ajax');
+    backdrop_add_library('system', 'backdrop.modal');
 
-
-/**
- * Implementation of hook_preprocess_html().
- *
- * This will add the css file to every page
- */
-//function webformtonode_preprocess_html(&$variables) {
-//  backdrop_add_css(backdrop_get_path('module', 'webformtonode') .'/css/webformtonode.css');
-//}
-
-
-
-/**
- * Provide a list of actions that can be executed on a submission.
- *
- * Some actions are displayed in the list of submissions such as edit, view, and
- * delete. All other actions are displayed only when viewing the submission.
- * These additional actions may be specified in this hook. Examples included
- * directly in the Webform module include PDF, print, and resend e-mails. Other
- * modules may extend this list by using this hook.
- *
- * @param $node
- *   The Webform node on which this submission was made.
- * @param $submission
- *   The Webform submission on which the actions may be performed.
- *
- * @return array
- *   List of action.
- */
-function webformtonode_webform_submission_actions($node, $submission) {
-
-  //Get list of webforms the 'Webform To Node' option should be added to.
-  $webformstonode = config_get('webformtonode.settings', 'webforms');
-
-  $actions = array();
-
-  if (webform_results_access($node)) {
-    //if this submission nid is in the list of webforms then add button option
-    if (in_array($node->nid, $webformstonode, true)) {
-       $actions['saveasnode'] = array(
-        'title' => t('Save submission as node'),
-        'href' => 'node/' . $node->nid . '/submission/' . $submission->sid . '/saveasnode',
-       'query' => backdrop_get_destination(),
-     );
-    }
+    $form_state = array(
+      'ajax' => TRUE,
+      'title' => t('Promote Submission #@serial', array('@serial' => $submission->serial)),
+    );
+    $commands = backdrop_process_form('webformtonode_confirm', $form_state, $node, $submission);
+    return array('#type' => 'ajax', '#commands' => $commands);
   }
 
-  //backdrop_set_message('<pre>$actions - $actions<br>'. print_r($actions, TRUE) .'</pre>');
+  return backdrop_get_form('webformtonode_confirm', $node, $submission);
+}
 
+/**
+ * Implements hook_webform_submission_actions().
+ */
+function webformtonode_webform_submission_actions($node, $submission) {
+  $enabled_nids = config_get('webformtonode.settings', 'webforms') ?: array();
+  $actions = array();
+
+  if (webform_results_access($node) && in_array($node->nid, $enabled_nids)) {
+    $actions['saveasnode'] = array(
+      'title' => t('Save as node'),
+      'href' => 'node/' . $node->nid . '/submission/' . $submission->sid . '/saveasnode',
+      'query' => backdrop_get_destination(),
+      // Add 'use-ajax' class here later to trigger the modal.
+    );
+  }
   return $actions;
 }
 
-
 /**
-* Form confirming to create a new node from form submissoin
-*/
-function webformtonode_confirm($form, $form_state, $node, $submission) {
-
-  backdrop_set_message('<pre>$submission - $submission<br>'. print_r($submission, TRUE) .'</pre>');
-
-  // Get name of submitter.
-  $speaker_name = $submission->data[1][0];
-
-  backdrop_set_message('<pre>$speaker_name - $speaker_name<br>'. print_r($speaker_name, TRUE) .'</pre>');
-
-  $form['#tree'] = TRUE;
-
+ * The Confirmation Form.
+ */
+/**
+ * The Confirmation Form.
+ */
+/**
+ * The Confirmation Form builder.
+ */
+function webformtonode_confirm($form, &$form_state, $node, $submission) {
   $form['#node'] = $node;
   $form['#submission'] = $submission;
+
+  // OPTION A: Keep the New Tab (Trusted Admin style)
+  // $form['#attributes']['target'] = '_blank';
+
+  // OPTION B: Standard Tab (Default style)
+  // Just leave #attributes['target'] out.
+
+  // THE FIX: Unset the destination so our redirect in the submit handler works.
+  if (isset($_GET['destination'])) {
+    unset($_GET['destination']);
+  }
+
+  $form['description'] = array(
+    '#markup' => '<p>' . t('Are you sure you want to promote submission #@serial?', array('@serial' => $submission->serial)) . '</p>',
+  );
+
   $form['actions'] = array('#type' => 'actions');
-  $form['actions']['text'] = array('#markup' => '<p>' . t('Are you sure you want to create a new node from <strong><em>' . $speaker_name . '</em></strong> submission?') . '</p>');
-  $form['actions']['save'] = array(
-    '#type' => 'submit',
-    '#value' => t('Create node from submission'),
-  );
-  $form['actions']['cancel'] = array(
-    '#type' => 'markup',
-    '#markup' => l(t('Cancel'), isset($_GET['destination']) ? $_GET['destination'] : 'node/' . $node->nid . '/saveasnode/' . $submission->sid),
-  );
-return $form;
+  $form['actions']['submit'] = array('#type' => 'submit', '#value' => t('Confirm'));
+
+  return $form;
 }
 
+/**
+ * The main "Warp Engine" submit handler.
+ */
 /**
  * Submit function for creating a node from a webform submission.
  */
 function webformtonode_confirm_submit($form, &$form_state) {
-  // 1. Retrieve the objects from the form arguments.
-  // $node is the Webform node; $submission is the user's data.
-  $webform_node = $form_state['build_info']['args'][0];
-  $submission = $form_state['build_info']['args'][1];
-
-  // 2. Load the mapping configuration for this specific Webform.
+  $webform_node = $form['#node'];
+  $submission = $form['#submission'];
   $config = config('webformtonode.settings');
   $target_type = $config->get('mapping_' . $webform_node->nid . '_type');
   $field_map = $config->get('mapping_' . $webform_node->nid . '_fields');
 
   if (!$target_type || empty($field_map)) {
-    backdrop_set_message(t('No mapping configuration found. Please configure the mapping for this Webform.'), 'error');
+    backdrop_set_message(t('No mapping found.'), 'error');
     return;
   }
 
-  // 3. Convert numeric CIDs to human-readable 'form_keys' (Augmentation).
   webformtonode_augment_submission($submission);
-
-  // 4. Initialize the new Node entity.
   $new_node = entity_create('node', array('type' => $target_type));
   node_object_prepare($new_node);
-
-  // Standardize settings: Use LANGUAGE_NONE and set author to submitter.
-  $new_node->langcode = LANGUAGE_NONE;
   $new_node->uid = $submission->uid;
-  $new_node->status = 1; // Default to published for Alpha testing.
 
-  // 5. Loop through the mapping and translate Webform data to Node fields.
   foreach ($field_map as $webform_key => $node_target) {
-    // Skip if 'Skip Field' was selected or if the webform key doesn't exist.
     if (empty($node_target) || !isset($submission->keyed_data[$webform_key])) {
       continue;
     }
 
-    $values = $submission->keyed_data[$webform_key];
+    $values = array_filter($submission->keyed_data[$webform_key], function($val) {
+      return ($val !== '' && $val !== NULL);
+    });
 
-    // Handle Title and Body separately as they aren't standard Field API fields.
-    if ($node_target == 'title') {
-      $new_node->title = isset($values[0]) ? $values[0] : '';
+    if (empty($values)) {
+      continue;
     }
-    elseif ($node_target == 'body') {
-      $new_node->body[LANGUAGE_NONE][0]['value'] = isset($values[0]) ? $values[0] : '';
-      $new_node->body[LANGUAGE_NONE][0]['format'] = 'filtered_html';
-    }
-    else {
-      // Logic for standard and multi-value fields.
-      $field_info = field_info_field($node_target);
 
-      // Identify the correct database column for this field type.
-      $column = 'value';
-      if (isset($field_info['type'])) {
-        switch ($field_info['type']) {
-          case 'email': $column = 'email'; break;
-          case 'link_field': $column = 'url'; break;
-          case 'taxonomy_term_reference': $column = 'tid'; break;
-          case 'file':
-          case 'image': $column = 'fid'; break;
-        }
+    // Determine column name
+    $field_info = field_info_field($node_target);
+    $column = 'value';
+    if (isset($field_info['type'])) {
+      switch ($field_info['type']) {
+        case 'link_field': $column = 'url'; break;
+        case 'email': $column = 'email'; break;
+        case 'taxonomy_term_reference': $column = 'tid'; break;
+        case 'file':
+        case 'image': $column = 'fid'; break;
+      }
+    }
+
+    // THE NUCLEAR FIX: Build a completely separate temporary array.
+    $field_data = array();
+
+    foreach ($values as $delta => $val) {
+      if ($node_target == 'title') {
+        $new_node->title = $val;
+        continue;
       }
 
-      // Initialize the field array to prevent "ghost" data if overwriting.
-      $new_node->{$node_target}[LANGUAGE_NONE] = array();
-
-      // Loop through all values (handles single items and multi-checkboxes).
-      foreach ($values as $delta => $val) {
-        if ($val !== '') {
-          $new_node->{$node_target}[LANGUAGE_NONE][$delta][$column] = $val;
+      $item = array();
+      if (isset($field_info['type']) && ($field_info['type'] == 'file' || $field_info['type'] == 'image')) {
+        $new_fid = _webformtonode_copy_file($val, $new_node, $node_target);
+        if ($new_fid) {
+          $item = array('fid' => $new_fid, 'display' => 1);
         }
       }
+      elseif ($node_target == 'body') {
+        $item = array('value' => $val, 'format' => 'filtered_html');
+      }
+      else {
+        $item = array($column => $val);
+      }
+
+      if (!empty($item)) {
+        $field_data[LANGUAGE_NONE][$delta] = $item;
+      }
+    }
+
+    // Now, assign the WHOLE block to the node at once.
+    // This overwrites any strings with a proper array structure.
+    if (!empty($field_data)) {
+      $new_node->{$node_target} = $field_data;
     }
   }
 
-  // 6. Final safety check: Nodes REQUIRE a title.
-  // If no title was mapped, use a fallback (Auto Title module may overwrite this later).
   if (empty($new_node->title)) {
-    $new_node->title = t('Submission @sid from @form', array(
-      '@sid' => $submission->sid,
-      '@form' => $webform_node->title
+    $new_node->title = t('@form Submission @serial', array(
+      '@form' => $webform_node->title,
+      '@serial' => $submission->serial,
     ));
   }
 
-  // 7. Save the node and provide feedback.
   node_save($new_node);
 
-  backdrop_set_message(t('Successfully created @type: !link', array(
-    '@type' => $target_type,
-    '!link' => l($new_node->title, 'node/' . $new_node->nid)
-  )));
-
-  // Redirect the administrator to the new content.
-  $form_state['redirect'] = 'node/' . $new_node->nid;
+  backdrop_set_message(t('Node created: !link', array('!link' => l($new_node->title, 'node/' . $new_node->nid))));
+  $form_state['redirect'] = 'node/' . $new_node->nid . '/edit';
 }
 
 /**
- * Returns a list of mappable targets for a specific content type.
- * Includes the Node Title, Body, and all Field API fields.
+ * Helper: Transports files to Node storage.
  */
-function webformtonode_get_target_fields($node_type) {
-  $targets = array(
-    'title' => t('Node: Title'),
-    'body' => t('Node: Body'),
-  );
+function _webformtonode_copy_file($fid, $node, $field_name) {
+  // 1. Load the full Field Array (The missing piece!)
+  $field = field_info_field($field_name);
+  $instance = field_info_instance('node', $field_name, $node->type);
 
-  // Get all field instances for this specific node bundle.
-  $instances = field_info_instances('node', $node_type);
-
-  foreach ($instances as $field_name => $instance) {
-    // We display the Label and the machine name for clarity (Feeds style).
-    $targets[$field_name] = $instance['label'] . ' (' . $field_name . ')';
+  if (!$field || !$instance) {
+    return NULL;
   }
 
-  return $targets;
+  if (is_array($fid)) {
+    $fid = reset($fid);
+  }
+
+  $file = file_load($fid);
+  if (!$file) {
+    return NULL;
+  }
+
+  // 2. Pass the $field ARRAY, not the string name
+  $upload_location = file_field_widget_uri($field, $instance);
+
+  file_prepare_directory($upload_location, FILE_CREATE_DIRECTORY);
+
+  $new_file = file_copy($file, $upload_location . '/' . $file->filename, FILE_EXISTS_RENAME);
+
+  if ($new_file) {
+    $new_file->status = FILE_STATUS_PERMANENT;
+    file_save($new_file);
+    file_usage_add($new_file, 'webformtonode', 'node', $node->nid ?: 0);
+    return $new_file->fid;
+  }
+
+  return NULL;
 }
 
 /**
- * Augment a webform submission with a list of keyed data.
- * This allows us to access data via 'form_key' instead of 'cid'.
+ * Helper: Map CID data to Form Keys.
  */
 function webformtonode_augment_submission(&$submission) {
   $node = node_load($submission->nid);
-  if (empty($node) || $node->type != 'webform') {
-    return;
-  }
-
-  // Map cid to form_key.
   $form_keys = array();
   foreach ($node->webform['components'] as $cid => $component) {
     $form_keys[$cid] = $component['form_key'];
@@ -338,8 +290,20 @@ function webformtonode_augment_submission(&$submission) {
 
   $submission->keyed_data = array();
   foreach ($submission->data as $cid => $values) {
-    // Webform data is always an array of values (for multi-selects, etc).
-    // We store the whole array in keyed_data.
-    $submission->keyed_data[$form_keys[$cid]] = $values;
+    if (isset($form_keys[$cid])) {
+      $submission->keyed_data[$form_keys[$cid]] = $values;
+    }
   }
+}
+
+/**
+ * Helper: Target field options.
+ */
+function webformtonode_get_target_fields($node_type) {
+  $targets = array('title' => t('Node: Title'), 'body' => t('Node: Body'));
+  $instances = field_info_instances('node', $node_type);
+  foreach ($instances as $field_name => $instance) {
+    $targets[$field_name] = $instance['label'] . ' (' . $field_name . ')';
+  }
+  return $targets;
 }
