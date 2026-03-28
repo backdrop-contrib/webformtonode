@@ -14,6 +14,13 @@ Install this module using the official Backdrop CMS instructions at https://docs
 
 Visit the configuration page under Administration > Webform to Node (/admin/config/webformtonode/settings).
 
+## Webform fields types supported
+ - Textfield
+ - Textarea
+ - Email
+ - Links
+ - Images
+
 ## Documentation: [todo]
 Additional documentation is located in the Wiki: https://github.com/backdrop-contrib/webformtonode/wiki
 
