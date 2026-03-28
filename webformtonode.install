@@ -6,19 +6,49 @@
  */
 
 /**
+ * Implements hook_schema().
+ */
+function webformtonode_schema() {
+  $schema['webformtonode_map'] = array(
+    'description' => 'Maps webform submissions to the nodes they created.',
+    'fields' => array(
+      'sid' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'description' => 'The Webform Submission ID.',
+      ),
+      'nid' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'description' => 'The created Node ID.',
+      ),
+      'created' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Timestamp of when the node was created.',
+      ),
+    ),
+    'primary key' => array('sid'),
+    'indexes' => array(
+      'nid' => array('nid'),
+    ),
+  );
+  return $schema;
+}
+
+/**
  * Implements hook_install().
  */
 function webformtonode_install() {
-  // Initialize the configuration file with empty defaults.
   $config = config('webformtonode.settings');
 
-  // 'webforms' stores the NIDs of enabled webforms.
+  // Initialize the enabled webforms list as an empty array.
   if (!$config->get('webforms')) {
     $config->set('webforms', array());
   }
-
-  // Optional: Set a default message or help text indicator.
-  $config->set('addtowebform', t('Add to Webform'));
 
   $config->save();
 }
@@ -27,6 +57,9 @@ function webformtonode_install() {
  * Implements hook_uninstall().
  */
 function webformtonode_uninstall() {
-  // To delete the entire webformtonode.settings.json file:
+  // Wipe the module configuration.
   config('webformtonode.settings')->delete();
+
+  // Note: The webformtonode_map table is automatically dropped by
+  // Backdrop because it is defined in hook_schema().
 }

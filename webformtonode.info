@@ -1,8 +1,13 @@
 name = Webform submission to node
-description = Create a node from a webform submission
+description = Create a node from a webform submission with relational mapping and AJAX support.
 backdrop = 1.x
 type = module
-version = 0.1.3
+version = 0.1.6
 package = Webform
 
+; Dependencies for the Warp Engine
+dependencies[] = webform
+dependencies[] = entityplus
+
+; Custom styling for the dashboard and buttons
 stylesheets[all][] = css/webformtonode.css

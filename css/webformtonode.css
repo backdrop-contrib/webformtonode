@@ -1,0 +1,6 @@
+/* Prevent any interaction once the AJAX process has started */
+.progress-disabled {
+  pointer-events: none;
+  opacity: 0.6;
+  cursor: wait;
+}
