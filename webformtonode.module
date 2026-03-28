@@ -19,19 +19,26 @@ function webformtonode_config_info() {
 /**
  * Implements hook_menu().
  */
+/**
+ * Implements hook_menu().
+ */
+/**
+ * Implements hook_menu().
+ */
 function webformtonode_menu() {
   $items = array();
 
+  // 1. Unified Landing Page (Dashboard)
   $items['admin/config/webformtonode/settings'] = array(
     'title' => 'Webform to node',
-    'description' => 'Configure how webforms translate to structured content.',
     'page callback' => 'webformtonode_admin_settings_landing',
     'access arguments' => array('administer site configuration'),
     'file' => 'webformtonode.admin.inc',
   );
 
+  // 2. Manage Webform Selection (The Inventory Gatekeeper)
   $items['admin/config/webformtonode/settings/select_webforms'] = array(
-    'title' => '1. Select Webforms',
+    'title' => 'Manage webform selection',
     'page callback' => 'backdrop_get_form',
     'page arguments' => array('webformtonode_admin_select_form'),
     'access arguments' => array('administer site configuration'),
@@ -39,28 +46,19 @@ function webformtonode_menu() {
     'file' => 'webformtonode.admin.inc',
   );
 
-  $items['admin/config/webformtonode/settings/manage_webforms'] = array(
-    'title' => '2. Manage Webforms',
+  // 3. Delete Confirmation (The Safety Net)
+  $items['admin/config/webformtonode/settings/select_webforms/confirm'] = array(
+    'title' => 'Confirm Deletion',
     'page callback' => 'backdrop_get_form',
-    'page arguments' => array('webformtonode_admin_manage_form'),
+    'page arguments' => array('webformtonode_admin_select_confirm_form'),
     'access arguments' => array('administer site configuration'),
-    'type' => MENU_NORMAL_ITEM,
+    'type' => MENU_CALLBACK,
     'file' => 'webformtonode.admin.inc',
   );
 
-  // The "Transporter" Callback: Promotes a submission to a Node.
-  $items['node/%webform_menu/submission/%webform_menu_submission/saveasnode'] = array(
-    'title' => 'Save as Node',
-    'load arguments' => array(1),
-    'page callback' => 'webformtonode_confirm_callback',
-    'page arguments' => array(1, 3),
-    'access callback' => 'webform_results_access',
-    'access arguments' => array(1),
-    'type' => MENU_CALLBACK,
-  );
-
+  // 4. Field Mapping Configuration
   $items['admin/config/webformtonode/settings/manage_webforms/fields/%'] = array(
-    'title' => 'Map Webform to Node Fields',
+    'title' => 'Configure Webform Mapping',
     'page callback' => 'backdrop_get_form',
     'page arguments' => array('webformtonode_admin_fields_list_form', 6),
     'access arguments' => array('administer site configuration'),
@@ -68,26 +66,29 @@ function webformtonode_menu() {
     'file' => 'webformtonode.admin.inc',
   );
 
+  // 5. THE RESTORED TRANSPORTER (The Warp Engine Trigger)
+  // This uses Webform's internal loaders to prevent "Access Denied".
+  $items['node/%webform_menu/submission/%webform_menu_submission/saveasnode'] = array(
+    'title' => 'Save as Node',
+    'load arguments' => array(1), // This tells %webform_menu_submission which NID to use
+    'page callback' => 'webformtonode_confirm_callback',
+    'page arguments' => array(1, 3),
+    'access callback' => 'webform_results_access',
+    'access arguments' => array(1),
+    'type' => MENU_CALLBACK,
+  );
+
   return $items;
 }
 
 /**
- * Wrapper callback to handle AJAX/Modal or standard page requests.
+ * Wrapper callback to handle the transition from URL to Form.
  */
 function webformtonode_confirm_callback($node, $submission) {
-  // If this is an AJAX request, we prepare for a Modal.
-  if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
-    backdrop_add_library('system', 'backdrop.ajax');
-    backdrop_add_library('system', 'backdrop.modal');
-
-    $form_state = array(
-      'ajax' => TRUE,
-      'title' => t('Promote Submission #@serial', array('@serial' => $submission->serial)),
-    );
-    $commands = backdrop_process_form('webformtonode_confirm', $form_state, $node, $submission);
-    return array('#type' => 'ajax', '#commands' => $commands);
+  // Webform has already loaded these as objects.
+  if (!$node || !$submission) {
+    return MENU_NOT_FOUND;
   }
-
   return backdrop_get_form('webformtonode_confirm', $node, $submission);
 }
 
@@ -118,17 +119,18 @@ function webformtonode_webform_submission_actions($node, $submission) {
 /**
  * The Confirmation Form builder.
  */
+/**
+ * The Confirmation Form builder.
+ */
+/**
+ * The Confirmation Form builder.
+ */
 function webformtonode_confirm($form, &$form_state, $node, $submission) {
   $form['#node'] = $node;
   $form['#submission'] = $submission;
 
-  // OPTION A: Keep the New Tab (Trusted Admin style)
-  // $form['#attributes']['target'] = '_blank';
-
-  // OPTION B: Standard Tab (Default style)
-  // Just leave #attributes['target'] out.
-
-  // THE FIX: Unset the destination so our redirect in the submit handler works.
+  // We unset the destination here so the Form API doesn't
+  // hijack our custom redirects in the submit handler.
   if (isset($_GET['destination'])) {
     unset($_GET['destination']);
   }
@@ -138,7 +140,25 @@ function webformtonode_confirm($form, &$form_state, $node, $submission) {
   );
 
   $form['actions'] = array('#type' => 'actions');
-  $form['actions']['submit'] = array('#type' => 'submit', '#value' => t('Confirm'));
+
+  // Route A: Save and return to list immediately.
+  $form['actions']['submit_save'] = array(
+    '#type' => 'submit',
+    '#value' => t('Save'),
+  );
+
+  // Route B: Save and go to Edit, with a trail back to the list.
+  $form['actions']['submit_edit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Save and Edit'),
+  );
+
+  // Route C: Cancel.
+  $form['actions']['cancel'] = array(
+    '#markup' => l(t('Cancel'), 'node/' . $node->nid . '/webform-results', array(
+      'attributes' => array('class' => array('button'))
+    )),
+  );
 
   return $form;
 }
@@ -165,6 +185,11 @@ function webformtonode_confirm_submit($form, &$form_state) {
   $new_node = entity_create('node', array('type' => $target_type));
   node_object_prepare($new_node);
   $new_node->uid = $submission->uid;
+
+  $status_setting = config_get('webformtonode.settings', 'node_status_' . $webform_node->nid);
+
+  // Explicitly cast to int to ensure Backdrop/PHP 8 treats it correctly (0 or 1)
+  $new_node->status = ($status_setting !== NULL) ? (int) $status_setting : 1;
 
   foreach ($field_map as $webform_key => $node_target) {
     if (empty($node_target) || !isset($submission->keyed_data[$webform_key])) {
@@ -235,10 +260,27 @@ function webformtonode_confirm_submit($form, &$form_state) {
   }
 
   node_save($new_node);
-
   backdrop_set_message(t('Node created: !link', array('!link' => l($new_node->title, 'node/' . $new_node->nid))));
-  $form_state['redirect'] = 'node/' . $new_node->nid . '/edit';
+
+  $webform_nid = $form['#node']->nid;
+  $submissions_path = 'node/' . $webform_nid . '/webform-results';
+  $clicked = $form_state['clicked_button']['#array_parents'][1];
+
+  if ($clicked == 'submit_edit') {
+    // FIX: Passing the destination inside the query array.
+    $form_state['redirect'] = array(
+      'node/' . $new_node->nid . '/edit',
+      array(
+        'query' => array('destination' => $submissions_path),
+      ),
+    );
+  }
+  else {
+    // Save path: Go straight back to submissions.
+    $form_state['redirect'] = $submissions_path;
+  }
 }
+
 
 /**
  * Helper: Transports files to Node storage.

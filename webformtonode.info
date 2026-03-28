@@ -2,7 +2,7 @@ name = Webform submission to node
 description = Create a node from a webform submission
 backdrop = 1.x
 type = module
-version = 0.1.2
+version = 0.1.3
 package = Webform
 
 stylesheets[all][] = css/webformtonode.css
