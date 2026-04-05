@@ -38,7 +38,7 @@ Visit **Administration > Configuration > Webform to Node** (`admin/config/webfor
 
 * **Manage Webform Selection:** Select which Webforms should be enabled for the promotion engine.
 * **Field Mapping:** Click "Configure" next to an enabled webform. Select your **Target Content Type** to reveal the mapping table.
-* **Additional Processing:** Set default behaviors, such as whether promoted nodes should be "Published" or "Unpublished" by default.
+* **Additional Processing:** Set default behaviours, such as whether promoted nodes should be "Published" or "Unpublished" by default.
 
 ### 2. Handler Management
 The **Field Handler Management** section displays all discovered "Expert" handlers. If you add a new handler file to the `/handlers` folder or install a module that provides a new handler hook, use the **Rebuild Handler Registry** button to register it.
@@ -78,9 +78,9 @@ function mymodule_webformtonode_handler_info() {
 
 [ ] Bulk Promotion: Integration with Views Bulk Operations (VBO) to promote multiple submissions at once.
 
-[ ] E-Sign Integration: Specialised handler for electronic signature field types.
-
 [ ] Conditional Mapping: Allow mappings based on webform component values.
+
+[ ] Database Standards: Audit and update all registry/mapping code to strictly utilise Backdrop's database abstraction layer and schema API.
 
 ## Documentation
 Additional documentation and developer guides are located in the Wiki: https://github.com/backdrop-contrib/webformtonode/wiki
@@ -90,7 +90,7 @@ Bugs and feature requests should be reported in the Issue Queue: https://github.
 
 ## Current Maintainer(s):
 - Steve Moorhouse (albanycomputers) (https://github.com/albanycomputers)
-- Additional maintainers and contributors welcomed.
+- Additional maintainers and contributors are welcome.
 
 ## Credits
 - Steve Moorhouse - Zulip (DrAlbany)
