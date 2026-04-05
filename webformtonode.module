@@ -23,8 +23,9 @@ function webformtonode_menu() {
   $items = array();
 
   $items['admin/config/webformtonode/settings'] = array(
-    'title' => 'Webform to node',
-    'page callback' => 'webformtonode_admin_settings_landing',
+    'title' => 'Webform to Node',
+    'page callback' => 'backdrop_get_form',
+    'page arguments' => array('webformtonode_admin_settings_landing'),
     'access arguments' => array('administer site configuration'),
     'file' => 'webformtonode.admin.inc',
   );
@@ -65,17 +66,138 @@ function webformtonode_menu() {
     'file' => 'webformtonode.admin.inc',
   );
 
+  $items['admin/config/webformtonode/settings/scan'] = array(
+    'title' => 'Scan Handlers',
+    'page callback' => 'webformtonode_admin_scan_callback',
+    'access arguments' => array('administer site configuration'),
+    'type' => MENU_CALLBACK,
+    'file' => 'webformtonode.admin.inc',
+  );
+
   $items['node/%webform_menu/submission/%webform_menu_submission/saveasnode'] = array(
     'title' => 'Save as Node',
     'load arguments' => array(1),
     'page callback' => 'webformtonode_confirm_callback',
     'page arguments' => array(1, 3),
-    'access callback' => 'webform_results_access',
+    'access callback' => 'webformtonode_promote_access',
     'access arguments' => array(1),
     'type' => MENU_CALLBACK,
   );
 
   return $items;
+}
+
+/**
+ * Implements hook_permission().
+ */
+function webformtonode_permission() {
+  return array(
+    'promote webform submissions to nodes' => array(
+      'title' => t('Promote webform submissions to nodes'),
+      'description' => t('Allows users to trigger the mapping engine to create nodes from submissions.'),
+    ),
+  );
+}
+
+/**
+ * Access callback: Checks if a user can promote a specific webform.
+ */
+function webformtonode_promote_access($node) {
+  // Must have core webform access AND our custom promotion permission.
+  return webform_results_access($node) && user_access('promote webform submissions to nodes');
+}
+
+/**
+ * Registry of field handlers.
+ */
+function webformtonode_get_handlers() {
+  $handlers = &backdrop_static(__FUNCTION__);
+
+  if (!isset($handlers)) {
+    $config = config('webformtonode.settings');
+    $handlers = $config->get('registered_handlers') ?: array();
+  }
+
+  return $handlers;
+}
+
+/**
+ * Rebuilds the handler registry and manages active selections.
+ *
+ * Iteration 0.1.8: Manual hook loop for IDE compatibility and conflict logic.
+ */
+function webformtonode_rebuild_handlers() {
+  $all_candidates = array();
+
+  // 1. Discovery: Loop through all modules implementing the hook.
+  foreach (module_implements('webformtonode_handler_info') as $module) {
+    $function = $module . '_webformtonode_handler_info';
+
+    if (function_exists($function)) {
+      $result = $function();
+
+      if (is_array($result)) {
+        foreach ($result as $name => $info) {
+          $info['module'] = $module;
+          $all_candidates[$name][$module] = $info;
+        }
+      }
+    }
+  }
+
+  config_set('webformtonode.settings', 'handler_candidates', $all_candidates);
+
+  // 2. Resolve "Active" winners.
+  $active_selections = config_get('webformtonode.settings', 'active_handlers_map') ?: array();
+  $final_active_list = array();
+
+  foreach ($all_candidates as $name => $modules) {
+    if (isset($active_selections[$name]) && isset($modules[$active_selections[$name]])) {
+      $final_active_list[$name] = $modules[$active_selections[$name]];
+    }
+    else {
+      // Default: Prefer core if available, else pick first found.
+      $default_module = isset($modules['webformtonode']) ? 'webformtonode' : key($modules);
+      $final_active_list[$name] = $modules[$default_module];
+    }
+  }
+
+  // 3. Ghost Purge: Clean up mappings for nodes that have been deleted.
+  db_query("DELETE FROM {webformtonode_map} WHERE nid NOT IN (SELECT nid FROM {node})");
+
+  config_set('webformtonode.settings', 'registered_handlers', $final_active_list);
+  backdrop_static_reset('webformtonode_get_handlers');
+
+  return count($final_active_list);
+}
+
+/**
+ * Implements hook_webformtonode_handler_info().
+ */
+function webformtonode_webformtonode_handler_info() {
+  $handlers = array();
+  $core = array(
+    'date',
+    'select',
+    'grid',
+    'textfield',
+    'textarea',
+    'email',
+    'file',
+    'hidden',
+    'link',
+    'number',
+  );
+
+  foreach ($core as $type) {
+    $handlers[$type] = array(
+      'label' => ucwords($type),
+      'file' => 'handlers/' . $type,
+      'module' => 'webformtonode',
+    );
+  }
+
+  return $handlers;
 }
 
 /**
@@ -93,7 +215,10 @@ function webformtonode_confirm_callback($node, $submission) {
       backdrop_render($form),
       array('width' => 500)
     );
-    return array('#type' => 'ajax', '#commands' => $commands);
+    return array(
+      '#type' => 'ajax',
+      '#commands' => $commands,
+    );
   }
 
   return backdrop_get_form('webformtonode_confirm', $node, $submission);
@@ -106,25 +231,34 @@ function webformtonode_webform_submission_actions($node, $submission) {
   $enabled_nids = config_get('webformtonode.settings', 'webforms') ?: array();
   $actions = array();
 
-  if (webform_results_access($node) && in_array($node->nid, $enabled_nids)) {
-    $existing_nid = db_query("SELECT nid FROM {webformtonode_map} WHERE sid = :sid", array(':sid' => $submission->sid))->fetchField();
+  if (in_array($node->nid, $enabled_nids) && webformtonode_promote_access($node)) {
+    $existing_nid = db_query("SELECT nid FROM {webformtonode_map} WHERE sid = :sid", array(
+      ':sid' => $submission->sid,
+    ))->fetchField();
 
     if ($existing_nid) {
       $actions['saveasnode'] = array(
-        'title' => '✅ ' . t('Already saved as Node #@nid', array('@nid' => $existing_nid)),
+        'title' => t('View created node'),
         'href' => 'node/' . $existing_nid,
+        'attributes' => array(
+          'class' => array('button', 'button-secondary'),
+        ),
       );
     }
     else {
       backdrop_add_library('system', 'backdrop.ajax');
       backdrop_add_library('system', 'backdrop.dialog');
+
       $actions['saveasnode'] = array(
         'title' => t('Save as node'),
         'href' => 'node/' . $node->nid . '/submission/' . $submission->sid . '/saveasnode',
-        'attributes' => array('class' => array('use-ajax')),
+        'attributes' => array(
+          'class' => array('use-ajax', 'button', 'button-primary'),
+        ),
       );
     }
   }
+
   return $actions;
 }
 
@@ -135,27 +269,46 @@ function webformtonode_confirm($form, &$form_state, $node, $submission) {
   $form['#node'] = $node;
   $form['#submission'] = $submission;
 
+  $config = config('webformtonode.settings');
+  $target_type = $config->get('mapping_' . $node->nid . '_type');
+  $type_names = node_type_get_names();
+  $type_label = isset($type_names[$target_type]) ? $type_names[$target_type] : $target_type;
+
   $form['description'] = array(
-    '#markup' => '<p>' . t('Are you sure you want to save submission #@serial as a node?', array('@serial' => $submission->serial)) . '</p>',
+    '#markup' => '<div>' .
+    t('You are about to promote submission #@serial to a <strong>@type</strong> node.', array(
+      '@serial' => $submission->serial,
+      '@type' => $type_label,
+    )) .
+    '</div><p>' . t('Are you sure you want to proceed?') . '</p>',
   );
 
-  $form['actions'] = array('#type' => 'actions');
+  $form['actions'] = array(
+    '#type' => 'actions',
+  );
+
   $form['actions']['submit_save'] = array(
     '#type' => 'submit',
     '#value' => t('Save'),
-    '#ajax' => array('progress' => array('type' => 'throbber')),
+    '#ajax' => array(
+      'progress' => array('type' => 'throbber'),
+    ),
   );
 
   $form['actions']['submit_edit'] = array(
     '#type' => 'submit',
     '#value' => t('Save and Edit'),
-    '#ajax' => array('progress' => array('type' => 'throbber')),
+    '#ajax' => array(
+      'progress' => array('type' => 'throbber'),
+    ),
   );
 
   $form['actions']['cancel'] = array(
     '#type' => 'button',
     '#value' => t('Cancel'),
-    '#ajax' => array('callback' => 'webformtonode_ajax_close_modal'),
+    '#ajax' => array(
+      'callback' => 'webformtonode_ajax_close_modal',
+    ),
   );
 
   return $form;
@@ -168,7 +321,10 @@ function webformtonode_confirm_submit($form, &$form_state) {
   $submission = $form['#submission'];
   $webform_node = $form['#node'];
 
-  $exists = db_query("SELECT nid FROM {webformtonode_map} WHERE sid = :sid", array(':sid' => $submission->sid))->fetchField();
+  $exists = db_query("SELECT nid FROM {webformtonode_map} WHERE sid = :sid", array(
+    ':sid' => $submission->sid,
+  ))->fetchField();
+
   if ($exists) {
     backdrop_set_message(t('Already promoted to Node #@nid.', array('@nid' => $exists)), 'warning');
     return;
@@ -191,56 +347,83 @@ function webformtonode_confirm_submit($form, &$form_state) {
   $status_setting = config_get('webformtonode.settings', 'node_status_' . $webform_node->nid);
   $new_node->status = ($status_setting !== NULL) ? (int) $status_setting : 1;
 
-  // --- THE NUCLEAR FIX MAPPING LOOP ---
+  $handlers = webformtonode_get_handlers();
+
   foreach ($field_map as $webform_key => $node_target) {
-    if (empty($node_target) || !isset($submission->keyed_data[$webform_key])) { continue; }
+    if (empty($node_target) || !isset($submission->keyed_data[$webform_key])) {
+      continue;
+    }
 
     $values = array_filter($submission->keyed_data[$webform_key], function($val) {
       return ($val !== '' && $val !== NULL);
     });
 
-    if (empty($values)) { continue; }
-
-    $field_info = field_info_field($node_target);
-    $column = 'value';
-    if (isset($field_info['type'])) {
-      switch ($field_info['type']) {
-        case 'link_field': $column = 'url'; break;
-        case 'email': $column = 'email'; break;
-        case 'taxonomy_term_reference': $column = 'tid'; break;
-        case 'file':
-        case 'image': $column = 'fid'; break;
-      }
+    if (empty($values)) {
+      continue;
     }
 
+    $component = _webformtonode_get_component_by_key($webform_node, $webform_key);
+    $field_info = field_info_field($node_target);
     $field_data = array();
+
     foreach ($values as $delta => $val) {
-      if ($node_target == 'title') { $new_node->title = $val; continue; }
+      if ($node_target == 'title') {
+        $new_node->title = $val;
+        continue;
+      }
 
       $item = array();
-      if (isset($field_info['type']) && ($field_info['type'] == 'file' || $field_info['type'] == 'image')) {
-        $new_fid = _webformtonode_copy_file($val, $new_node, $node_target);
-        if ($new_fid) { $item = array('fid' => $new_fid, 'display' => 1); }
-      }
-      elseif ($node_target == 'body') { $item = array('value' => $val, 'format' => 'filtered_html'); }
-      else { $item = array($column => $val); }
+      $type = $component['type'];
 
-      if (!empty($item)) { $field_data[LANGUAGE_NONE][$delta] = $item; }
+      if (isset($handlers[$type])) {
+        $handler_info = $handlers[$type];
+        module_load_include('inc', $handler_info['module'], $handler_info['file']);
+        $function = "webformtonode_{$type}_map";
+
+        if (function_exists($function)) {
+          $context = array(
+            'component' => $component,
+            'field_info' => $field_info,
+            'node_target' => $node_target,
+          );
+          $item = $function($val, $new_node, $context);
+        }
+      }
+
+      if (empty($item)) {
+        $item = array('value' => $val);
+      }
+
+      if (!empty($item)) {
+        $field_data[LANGUAGE_NONE][$delta] = $item;
+      }
     }
 
-    if (!empty($field_data)) { $new_node->{$node_target} = $field_data; }
+    if (!empty($field_data)) {
+      $new_node->{$node_target} = $field_data;
+    }
   }
 
   if (empty($new_node->title)) {
-    $new_node->title = t('@form Submission @serial', array('@form' => $webform_node->title, '@serial' => $submission->serial));
+    $new_node->title = t('@form Submission @serial', array(
+      '@form' => $webform_node->title,
+      '@serial' => $submission->serial,
+    ));
   }
 
   node_save($new_node);
 
-  // Source of Truth: Record in our Map table.
-  db_insert('webformtonode_map')->fields(array('sid' => $submission->sid, 'nid' => $new_node->nid, 'created' => REQUEST_TIME))->execute();
+  db_insert('webformtonode_map')
+    ->fields(array(
+      'sid' => $submission->sid,
+      'nid' => $new_node->nid,
+      'created' => REQUEST_TIME,
+    ))
+    ->execute();
 
-  backdrop_set_message(t('Node created: !link', array('!link' => l($new_node->title, 'node/' . $new_node->nid))));
+  backdrop_set_message(t('Node created: !link', array(
+    '!link' => l($new_node->title, 'node/' . $new_node->nid),
+  )));
 
   $clicked = $form_state['clicked_button']['#array_parents'][1];
   $path = ($clicked == 'submit_edit') ? "node/{$new_node->nid}/edit" : "node/{$webform_node->nid}/webform-results";
@@ -252,19 +435,16 @@ function webformtonode_confirm_submit($form, &$form_state) {
     print ajax_render($commands);
     backdrop_exit();
   }
+
   $form_state['redirect'] = $path;
 }
 
 /**
  * Implements hook_views_data().
- * Exposes the webformtonode_map table with all raw fields and helpers.
  */
 function webformtonode_views_data() {
   $data = array();
-
   $data['webformtonode_map']['table']['group'] = t('Webform to Node');
-
-  // Join to webform_submissions so our fields appear in Submission views.
   $data['webformtonode_map']['table']['join'] = array(
     'webform_submissions' => array(
       'left_field' => 'sid',
@@ -272,7 +452,6 @@ function webformtonode_views_data() {
     ),
   );
 
-  // 1. RAW NID FIELD (Essential for custom "Edit" links/buttons)
   $data['webformtonode_map']['nid'] = array(
     'title' => t('Promoted Node ID'),
     'help' => t('The raw ID of the node created from this submission.'),
@@ -282,7 +461,6 @@ function webformtonode_views_data() {
     ),
     'filter' => array('handler' => 'views_handler_filter_numeric'),
     'sort' => array('handler' => 'views_handler_sort'),
-    // Relationship remains so you can also pull in Title/Author/etc.
     'relationship' => array(
       'base' => 'node',
       'base field' => 'nid',
@@ -291,7 +469,6 @@ function webformtonode_views_data() {
     ),
   );
 
-  // 2. PROMOTION STATUS (The Boolean Helper)
   $data['webformtonode_map']['nid_status'] = array(
     'title' => t('Promotion Status'),
     'help' => t('Shows "Promoted" or "Not Saved" based on whether a map exists.'),
@@ -309,7 +486,6 @@ function webformtonode_views_data() {
     ),
   );
 
-  // 3. PROMOTION DATE (The Timestamp)
   $data['webformtonode_map']['created'] = array(
     'title' => t('Promotion Date'),
     'help' => t('The date and time the submission was promoted.'),
@@ -321,11 +497,12 @@ function webformtonode_views_data() {
     'filter' => array('handler' => 'views_handler_filter_date'),
   );
 
-  // 4. SUBMISSION ID (The Bridge)
   $data['webformtonode_map']['sid'] = array(
     'title' => t('Map: Submission ID'),
     'help' => t('The original submission ID in our map table.'),
-    'field' => array('handler' => 'views_handler_field_numeric'),
+    'field' => array(
+      'handler' => 'views_handler_field_numeric',
+    ),
   );
 
   return $data;
@@ -337,43 +514,108 @@ function webformtonode_views_data() {
 function webformtonode_ajax_close_modal($form, $form_state) {
   $commands = array();
   $commands[] = ajax_command_close_dialog('#backdrop-modal');
-  return array('#type' => 'ajax', '#commands' => $commands);
+  return array(
+    '#type' => 'ajax',
+    '#commands' => $commands,
+  );
 }
 
 /**
- * Helpers (Files, Augment, Targets)
+ * Copy a file to a node's file field destination.
  */
 function _webformtonode_copy_file($fid, $node, $field_name) {
   $field = field_info_field($field_name);
   $instance = field_info_instance('node', $field_name, $node->type);
-  if (!$field || !$instance) return NULL;
-  if (is_array($fid)) { $fid = reset($fid); }
+
+  if (!$field || !$instance) {
+    return NULL;
+  }
+
+  if (is_array($fid)) {
+    $fid = reset($fid);
+  }
+
   $file = file_load($fid);
-  if (!$file) return NULL;
+  if (!$file) {
+    return NULL;
+  }
+
   $upload_location = file_field_widget_uri($field, $instance);
   file_prepare_directory($upload_location, FILE_CREATE_DIRECTORY);
+
   $new_file = file_copy($file, $upload_location . '/' . $file->filename, FILE_EXISTS_RENAME);
+
   if ($new_file) {
     $new_file->status = FILE_STATUS_PERMANENT;
     file_save($new_file);
     return $new_file->fid;
   }
+
   return NULL;
 }
 
+/**
+ * Attaches keyed data to the submission object based on component form_keys.
+ */
 function webformtonode_augment_submission(&$submission) {
   $node = node_load($submission->nid);
   $form_keys = array();
-  foreach ($node->webform['components'] as $cid => $component) { $form_keys[$cid] = $component['form_key']; }
+
+  foreach ($node->webform['components'] as $cid => $component) {
+    $form_keys[$cid] = $component['form_key'];
+  }
+
   $submission->keyed_data = array();
   foreach ($submission->data as $cid => $values) {
-    if (isset($form_keys[$cid])) { $submission->keyed_data[$form_keys[$cid]] = $values; }
+    if (isset($form_keys[$cid])) {
+      $submission->keyed_data[$form_keys[$cid]] = $values;
+    }
   }
 }
 
+/**
+ * Returns a list of target fields for a specific node type.
+ */
 function webformtonode_get_target_fields($node_type) {
-  $targets = array('title' => t('Node: Title'), 'body' => t('Node: Body'));
+  $targets = array(
+    'title' => t('Node: Title'),
+    'body' => t('Node: Body'),
+  );
+
   $instances = field_info_instances('node', $node_type);
-  foreach ($instances as $field_name => $instance) { $targets[$field_name] = $instance['label'] . ' (' . $field_name . ')'; }
+  foreach ($instances as $field_name => $instance) {
+    $targets[$field_name] = $instance['label'] . ' (' . $field_name . ')';
+  }
+
   return $targets;
+}
+
+/**
+ * Helper to find a specific webform component by its form_key.
+ */
+function _webformtonode_get_component_by_key($node, $form_key) {
+  foreach ($node->webform['components'] as $component) {
+    if ($component['form_key'] == $form_key) {
+      return $component;
+    }
+  }
+  return FALSE;
+}
+
+/**
+ * Implements hook_node_delete().
+ */
+function webformtonode_node_delete($node) {
+  db_delete('webformtonode_map')
+    ->condition('nid', $node->nid)
+    ->execute();
+}
+
+/**
+ * Implements hook_webform_submission_delete().
+ */
+function webformtonode_webform_submission_delete($node, $submission) {
+  db_delete('webformtonode_map')
+    ->condition('sid', $submission->sid)
+    ->execute();
 }

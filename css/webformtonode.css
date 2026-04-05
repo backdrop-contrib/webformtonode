@@ -4,3 +4,28 @@
   opacity: 0.6;
   cursor: wait;
 }
+
+/**
+ * Scoped Hover Effects
+ */
+
+/* 1. Generic hover for ALL rows in our specific tables */
+.webformtonode-admin-table tr:hover td {
+  background-color: rgba(0, 0, 0, 0.04) !important;
+  transition: background-color 0.15s ease-in-out;
+}
+
+/* 2. Specific hover for the PENDING (Red) rows */
+.webformtonode-admin-table tr.webformtonode-handler-pending td {
+  background-color: #f15252 !important; /* A slightly deeper coral */
+}
+/* We use a slightly darker red/coral on hover so it still feels interactive */
+.webformtonode-admin-table tr.webformtonode-handler-pending:hover td {
+  background-color: #921414 !important; /* A slightly deeper coral */
+  color: #ffc;
+}
+
+/* 3. Ensure the 'Pending' text stays readable on hover */
+.webformtonode-admin-table tr.webformtonode-handler-pending:hover td strong {
+  text-shadow: 0px 1px 0px rgba(255, 255, 255, 0.2);
+}
