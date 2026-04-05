@@ -1,6 +1,4 @@
 # Webform to Node
-
-## Description
 Webform to Node provides a seamless "Promotion" workflow for Backdrop CMS. It allows site administrators to map Webform submissions to specific Content Types and promote individual submissions into full-fledged Nodes at the click of a button.
 
 What sets this module apart is its **Pluggable Architecture**. Built with developers in mind, it features a discovery engine that allows other modules to register custom field handlers, making it infinitely expandable for complex data types or external entity mapping.
